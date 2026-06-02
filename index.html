@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NextPhase - ระบบบันทึกเวลาทำงานทีมติดตั้งโซลาร์เซลล์</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0284c7">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @keyframes scan {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(220px); }
+        }
+        .scanner-line { animation: scan 2.5s infinite ease-in-out; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans min-h-screen flex flex-col items-center justify-center text-slate-800 p-0 sm:p-4">
+
+    <div class="w-full max-w-md bg-white min-h-screen sm:min-h-[850px] sm:rounded-3xl shadow-xl flex flex-col justify-between relative overflow-hidden">
+        
+        <div id="login-screen" class="absolute inset-0 bg-gradient-to-b from-blue-900 via-indigo-950 to-slate-950 z-50 flex flex-col justify-between p-6 text-white">
+            <div class="flex-1 flex flex-col justify-center items-center text-center space-y-6">
+                
+                <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg p-0 overflow-hidden border-2 border-white/20">
+                    <img id="company-logo" src="img/logo-next-phase.jpg">
+                </div>
+
+                <div class="space-y-1">
+                    <h2 class="text-2xl font-bold tracking-tight text-white">NextPhase Solar Energy</h2>
+                    <p class="text-xs text-blue-200/70">ระบบบันทึกเวลาทำงานและสแกนพิกัดทีมติดตั้ง</p>
+                </div>
+
+                <div class="w-full space-y-4 max-w-xs pt-4">
+                    <div class="space-y-1 text-left">
+                        <label class="text-xs text-blue-200/80 font-semibold pl-1">รหัสพนักงาน (Employee ID)</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-id-card absolute left-3.5 top-3.5 text-blue-300 text-sm"></i>
+                            <input type="text" id="login-emp-id" placeholder="เช่น NP101" class="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-400 focus:bg-white/20 transition-all text-white font-mono">
+                        </div>
+                    </div>
+                    <div class="space-y-1 text-left">
+                        <label class="text-xs text-blue-200/80 font-semibold pl-1">รหัสผ่านส่วนตัว (PIN 4 หลัก)</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-lock absolute left-3.5 top-3.5 text-blue-300 text-sm"></i>
+                            <input type="password" id="login-pass" placeholder="กรอกรหัสผ่าน 4 หลัก" class="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-400 focus:bg-white/20 transition-all text-white font-mono">
+                        </div>
+                    </div>
+                    <button onclick="handleLogin()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/20 tracking-wide">
+                        เข้าสู่ระบบสแกนงาน
+                    </button>
+                </div>
+            </div>
+            <div class="text-center text-[10px] text-blue-300/40">
+                NextPhase Tracking System v2.1 (Clean Theme)
+            </div>
+        </div>
+
+        <header class="bg-gradient-to-r from-blue-900 to-indigo-950 text-white p-5 rounded-b-2xl shadow-md">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-inner">
+                        <i class="fa-solid fa-user-gear text-white text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 id="user-display-name" class="text-sm font-bold leading-none text-white">กำลังโหลด...</h1>
+                        <p id="user-display-id" class="text-[10px] text-blue-200/70 mt-1">ID: -</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div id="live-time" class="text-lg font-mono font-bold text-emerald-400">00:00:00</div>
+                    <div id="live-date" class="text-[10px] text-blue-200/60">วันอังคารที่ 2 มิ.ย. 2569</div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 space-y-4 overflow-y-auto bg-slate-50" style="max-height: calc(100vh - 160px);">
+            
+            <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-2 text-slate-800">
+                        <i class="fa-solid fa-vial text-sm text-blue-600"></i>
+                        <h3 class="font-bold text-xs">แผงทดสอบระบบ (Demo Controller)</h3>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer scale-75">
+                        <input type="checkbox" id="toggle-cheat-system" class="sr-only peer" checked onchange="toggleAntiCheatSystem(this)">
+                        <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        <span class="ml-2 text-xs font-bold text-slate-600">เปิด Anti-Cheat</span>
+                    </label>
+                </div>
+                <p class="text-[11px] text-slate-500 mb-3">ทดสอบ: หากสับสวิตช์เป็น Fake GPS พิกัดดาวเทียมจะนิ่งสนิท ระบบหลังบ้านจะแอบล็อกปุ่มอัตโนมัติ</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="simulateGpsBehavior(true)" class="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs py-2 px-1 rounded-xl font-semibold transition-all">🟢 จำลองพิกัดแกว่ง (เน็ตปกติ)</button>
+                    <button onclick="simulateGpsBehavior(false)" class="bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs py-2 px-1 rounded-xl font-semibold transition-all">🚨 จำลองพิกัดนิ่ง (แอปโกง)</button>
+                    <button onclick="useRealHardwareGPS()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs py-2 px-1 rounded-xl font-semibold transition-all col-span-2 shadow-xs">📡 เรียกพิกัดจากดาวเทียมเครื่องจริง</button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col items-center">
+                <div class="w-full flex justify-between items-center mb-3">
+                    <span class="text-sm font-semibold text-slate-700 flex items-center">
+                        <i class="fa-solid fa-camera mr-2 text-blue-600"></i> ขั้นตอนที่ 1: สแกนใบหน้ายืนยันตัวตน
+                    </span>
+                    <span id="camera-status" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">กล้องปิดอยู่</span>
+                </div>
+
+                <div class="relative w-56 h-56 bg-slate-50 rounded-full border-4 border-slate-100 overflow-hidden shadow-inner flex items-center justify-center">
+                    <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center z-10 bg-slate-100">
+                        <i class="fa-solid fa-face-viewfinder text-5xl text-blue-500 mb-2 opacity-80"></i>
+                        <span class="text-xs text-slate-500 font-medium">กดปุ่มเปิดกล้องถ่ายภาพเซลฟี่</span>
+                    </div>
+                    <video id="webcam" class="absolute w-full h-full object-cover hidden" autoplay playsinline muted></video>
+                    <canvas id="photo-canvas" class="hidden"></canvas>
+                    <div id="scan-overlay" class="absolute inset-0 pointer-events-none hidden border-[8px] border-black/10 rounded-full">
+                        <div class="absolute inset-2 border border-dashed border-emerald-500 rounded-full"></div>
+                        <div class="scanner-line absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent shadow-[0_0_8px_#10b981]"></div>
+                    </div>
+                </div>
+
+                <div class="w-full mt-4 flex space-x-2">
+                    <button id="btn-toggle-camera" onclick="toggleCamera()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-video text-slate-500"></i> <span>เปิด/ปิดกล้อง</span>
+                    </button>
+                    <button id="btn-capture" onclick="captureFace()" disabled class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center space-x-1 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm">
+                        <i class="fa-solid fa-camera-retro"></i> <span>กดถ่ายใบหน้า</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-semibold text-slate-700 flex items-center">
+                        <i class="fa-solid fa-map-location-dot mr-2 text-blue-600"></i> ขั้นตอนที่ 2: ตรวจระยะห่างความปลอดภัย
+                    </span>
+                    <span id="gps-status" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">รอการตรวจ</span>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-3 text-xs space-y-1.5">
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">ที่ตั้งสำนักงาน NextPhase:</span>
+                        <span class="font-semibold text-slate-800">ศูนย์ใหญ่ในหมู่บ้าน (รัศมี 2 กม.)</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">พิกัดปัจจุบันของคุณ:</span>
+                        <span id="current-coords" class="font-mono text-slate-600 font-semibold">0.000000, 0.000000</span>
+                    </div>
+                    <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                        <span class="text-slate-600 font-medium">ระยะทางห่างจากออฟฟิศ:</span>
+                        <span id="distance-text" class="text-xs font-bold text-slate-900">- กม.</span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl overflow-hidden border border-slate-200 shadow-xs">
+                    <div id="map" class="w-full h-36 z-0 bg-slate-100"></div>
+                </div>
+            </div>
+
+            <button id="btn-submit-checkin" onclick="submitCheckIn()" disabled class="w-full bg-slate-300 text-slate-500 font-bold py-4 px-6 rounded-2xl transition-all text-sm flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed shadow-xs">
+                <i class="fa-solid fa-cloud-arrow-up text-base"></i>
+                <span>ส่งข้อมูลบันทึกเวลาเข้างาน</span>
+            </button>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-sm font-semibold text-slate-700 flex items-center">
+                        <i class="fa-solid fa-list-check mr-2 text-slate-600"></i> ประวัติล็อกอินของท่านวันนี้
+                    </span>
+                    <button onclick="exportToCSV()" class="text-xs text-blue-600 hover:text-blue-700 flex items-center space-x-1 font-semibold">
+                        <i class="fa-solid fa-file-csv"></i> <span>ดาวน์โหลด CSV</span>
+                    </button>
+                </div>
+                <div class="space-y-2 max-h-44 overflow-y-auto" id="logs-container"></div>
+            </div>
+
+        </main>
+
+        <footer class="bg-white border-t border-slate-100 p-3 text-center text-[10px] text-slate-400 flex items-center justify-between px-4">
+            <span>© 2026 NextPhase Solar Energy Co., Ltd.</span>
+            <button onclick="handleLogout()" class="text-rose-500 hover:text-rose-700 font-semibold flex items-center space-x-1">
+                <i class="fa-solid fa-power-off"></i> <span>ออกจากระบบ</span>
+            </button>
+        </footer>
+
+        <div id="custom-modal" class="hidden absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6">
+            <div class="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-2xl border border-slate-100">
+                <div id="modal-icon-container" class="w-14 h-14 rounded-full flex items-center justify-center mx-auto"></div>
+                <div class="space-y-1">
+                    <h3 id="modal-title" class="text-base font-bold text-slate-900"></h3>
+                    <p id="modal-message" class="text-xs text-slate-500 leading-relaxed"></p>
+                </div>
+                <button onclick="closeModal()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition-all">ตกลง</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const officeCoords = { lat: 13.850000, lng: 100.500000 }; 
+        const maxAllowedDistanceMeters = 2000; 
+
+        const employeeDatabase = {
+            "NP101": { name: "นายA", pin: "1234" },
+            "NP102": { name: "นางสาวB", pin: "5678" },
+            "NP103": { name: "นางC", pin: "9999" }
+        };
+
+        let isAntiCheatActive = true; 
+        let isGpsSpawningFake = false; 
+        let previousLat = 0;
+        let previousLng = 0;
+
+        function checkGpsVariance(currentLat, currentLng) {
+            if (!isAntiCheatActive) return true; 
+
+            if (previousLat === 0 && previousLng === 0) {
+                previousLat = currentLat;
+                previousLng = currentLng;
+                return true; 
+            }
+
+            const latDifference = Math.abs(currentLat - previousLat);
+            const lngDifference = Math.abs(currentLng - previousLng);
+
+            if (latDifference === 0 && lngDifference === 0) {
+                isGpsSpawningFake = true;
+                return false; 
+            }
+
+            isGpsSpawningFake = false;
+            previousLat = currentLat;
+            previousLng = currentLng;
+            return true;
+        }
+
+        let currentUser = null;
+        let userLocation = null;
+        let isSimulatedMode = true; 
+        let simulatedLat = 13.850120; 
+        let simulatedLng = 100.500240; 
+        let distanceToOffice = 0;
+        let localStream = null;
+        let capturedImageBase64 = null;
+        let faceVerified = false;
+        let map = null;
+        let userMarker = null;
+        let officeMarker = null;
+
+        window.onload = function() {
+            checkSession();
+            startClock();
+            initLeafletMap();
+            updateLocationDisplay();
+            loadLogs();
+        };
+
+        function handleLogin() {
+            const empId = document.getElementById('login-emp-id').value.trim().toUpperCase();
+            const password = document.getElementById('login-pass').value;
+
+            if (!empId || !password) {
+                showModal("warning", "ข้อมูลไม่ครบ", "กรุณาระบุรหัสพนักงานและรหัสพินส่วนตัว");
+                return;
+            }
+            if (!employeeDatabase[empId]) {
+                showModal("danger", "ไม่พบผู้ใช้งาน", "ไม่มีรหัสพนักงานนี้ในระบบ");
+                return;
+            }
+            if (employeeDatabase[empId].pin !== password) {
+                showModal("danger", "รหัสผ่านผิด", "รหัสพินไม่ถูกต้อง");
+                return;
+            }
+
+            currentUser = { empId: empId, name: employeeDatabase[empId].name };
+            localStorage.setItem('nextphase_user', JSON.stringify(currentUser));
+
+            document.getElementById('user-display-name').innerText = currentUser.name;
+            document.getElementById('user-display-id').innerText = `ID: ${currentUser.empId}`;
+            document.getElementById('login-screen').classList.add('hidden');
+            
+            showModal("success", "เข้าสู่ระบบสำเร็จ", `ยินดีต้อนรับคุณ ${currentUser.name}`);
+            loadLogs();
+        }
+
+        function checkSession() {
+            const savedUser = localStorage.getItem('nextphase_user');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                document.getElementById('user-display-name').innerText = currentUser.name;
+                document.getElementById('user-display-id').innerText = `ID: ${currentUser.empId}`;
+                document.getElementById('login-screen').classList.add('hidden');
+            } else {
+                document.getElementById('login-screen').classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('nextphase_user');
+            currentUser = null;
+            document.getElementById('login-screen').classList.remove('hidden');
+        }
+
+        function startClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('live-time').innerText = now.toLocaleTimeString('th-TH', { hour12: false });
+                document.getElementById('live-date').innerText = now.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            }, 1000);
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
+
+        function initLeafletMap() {
+            map = L.map('map', { zoomControl: false }).setView([officeCoords.lat, officeCoords.lng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            const companyIcon = L.divIcon({
+                html: '<div class="w-7 h-7 bg-blue-900 border-2 border-white rounded-xl flex items-center justify-center text-white text-xs shadow-md font-bold"><i class="fa-solid fa-solar-panel"></i></div>',
+                className: '', iconSize: [28, 28]
+            });
+            officeMarker = L.marker([officeCoords.lat, officeCoords.lng], { icon: companyIcon }).addTo(map);
+            L.circle([officeCoords.lat, officeCoords.lng], { color: '#0284c7', fillColor: '#0284c7', fillOpacity: 0.08, radius: maxAllowedDistanceMeters }).addTo(map);
+        }
+
+        function updateLocationDisplay() {
+            let lat = isSimulatedMode ? simulatedLat : (userLocation ? userLocation.coords.latitude : officeCoords.lat);
+            let lng = isSimulatedMode ? simulatedLng : (userLocation ? userLocation.coords.longitude : officeCoords.lng);
+
+            const isGpsLegit = checkGpsVariance(lat, lng);
+            const statusEl = document.getElementById('gps-status');
+
+            if (!isGpsLegit && isAntiCheatActive) {
+                statusEl.innerHTML = '<span class="text-rose-600 font-bold"><i class="fa-solid fa-circle-exclamation"></i> ตรวจพบ GPS ปลอม</span>';
+            } else {
+                statusEl.innerHTML = isSimulatedMode ? '<span class="text-blue-600 font-semibold">โหมด Demo</span>' : '<span class="text-emerald-600 font-bold"><i class="fa-solid fa-satellite-dish"></i> GPS แท้</span>';
+            }
+
+            document.getElementById('current-coords').innerText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+            distanceToOffice = calculateDistance(lat, lng, officeCoords.lat, officeCoords.lng);
+            const distInKm = (distanceToOffice / 1000).toFixed(2);
+            
+            const distEl = document.getElementById('distance-text');
+            if (distanceToOffice <= maxAllowedDistanceMeters) {
+                distEl.innerHTML = `<span class="text-emerald-600 font-bold">📍 ในระยะ ${distInKm} กม.</span>`;
+            } else {
+                distEl.innerHTML = `<span class="text-rose-500 font-bold">❌ นอกรัศมี ${distInKm} กม.</span>`;
+            }
+
+            const workerIcon = L.divIcon({
+                html: '<div class="w-6 h-6 bg-emerald-600 border-2 border-white rounded-full flex items-center justify-center text-white text-[10px] shadow-md animate-bounce"><i class="fa-solid fa-truck-ramps"></i></div>',
+                className: '', iconSize: [24, 24]
+            });
+
+            if (userMarker) { userMarker.setLatLng([lat, lng]); } 
+            else { userMarker = L.marker([lat, lng], { icon: workerIcon }).addTo(map); }
+            
+            const group = new L.featureGroup([officeMarker, userMarker]);
+            map.fitBounds(group.getBounds().pad(0.2));
+
+            checkValidationForSubmit();
+        }
+
+        function simulateGpsBehavior(isLegitRealGps) {
+            isSimulatedMode = true;
+            if (isLegitRealGps) {
+                simulatedLat = 13.850000 + (Math.random() * 0.002);
+                simulatedLng = 100.500000 + (Math.random() * 0.002);
+                showModal("success", "จำลอง: พิกัดแกว่งปกติ", "จำลองพฤติกรรม GPS ดาวเทียมจริงที่มีการขยับตามธรรมชาติ");
+            } else {
+                simulatedLat = 13.850500;
+                simulatedLng = 100.500500;
+                previousLat = 13.850500; 
+                previousLng = 100.500500;
+                showModal("danger", "จำลอง: ตรวจจับทุจริต", "พบแอปจำลองพิกัดเนื่องจากค่าพิกัดนิ่งสนิทผิดปกติ ระบบล็อกปุ่มทันที");
+            }
+            updateLocationDisplay();
+        }
+
+        function toggleAntiCheatSystem(checkbox) {
+            isAntiCheatActive = checkbox.checked;
+            updateLocationDisplay();
+        }
+
+        function useRealHardwareGPS() {
+            if (!navigator.geolocation) { showModal("danger", "ไม่รองรับ", "อุปกรณ์ไม่รองรับระบบพิกัด"); return; }
+            document.getElementById('gps-status').innerText = "กำลังรับพิกัดดาวเทียม...";
+            
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    isSimulatedMode = false;
+                    userLocation = pos;
+                    showModal("success", "เชื่อมต่อดาวเทียมแล้ว", "ดึงข้อมูลจากชิปฮาร์ดแวร์ GPS ของโทรศัพท์มือถือเรียบร้อย");
+                    updateLocationDisplay();
+                },
+                function() { showModal("warning", "พิกัดล้มเหลว", "กรุณาเปิดสิทธิ์เข้าถึงโลเคชั่นในมือถือ"); },
+                { enableHighAccuracy: true, timeout: 7000 }
+            );
+        }
+
+        async function toggleCamera() {
+            const video = document.getElementById('webcam');
+            const placeholder = document.getElementById('camera-placeholder');
+            const overlay = document.getElementById('scan-overlay');
+            const btnToggle = document.getElementById('btn-toggle-camera');
+            const btnCapture = document.getElementById('btn-capture');
+
+            if (localStream) { stopCamera(); return; }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                localStream = stream;
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                placeholder.classList.add('hidden');
+                overlay.classList.remove('hidden');
+                document.getElementById('camera-status').innerText = "กล้องทำงาน";
+                btnCapture.disabled = false;
+            } catch (err) {
+                placeholder.innerHTML = `<div class="text-center p-4"><div class="w-16 h-16 rounded-full bg-slate-200 mx-auto flex items-center justify-center mb-2"><i class="fa-solid fa-user text-2xl text-slate-500"></i></div><span class="text-xs bg-slate-900 text-white px-2 py-0.5 rounded">ช่างติดตั้ง (Demo Profile)</span></div>`;
+                btnCapture.disabled = false;
+                capturedImageBase64 = "DEMO_PHOTO";
+            }
+        }
+
+        function stopCamera() {
+            const video = document.getElementById('webcam');
+            const placeholder = document.getElementById('camera-placeholder');
+            const overlay = document.getElementById('scan-overlay');
+            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+            video.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            overlay.classList.add('hidden');
+            document.getElementById('btn-capture').disabled = true;
+        }
+
+        function captureFace() {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('photo-canvas');
+            if (localStream) {
+                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                capturedImageBase64 = canvas.toDataURL('image/png');
+                stopCamera();
+            }
+            faceVerified = true;
+            showModal("success", "ยืนยันใบหน้าผ่าน", "บันทึกภาพถ่ายยืนยันตัวตนในระบบเรียบร้อย");
+            checkValidationForSubmit();
+        }
+
+        function checkValidationForSubmit() {
+            const btn = document.getElementById('btn-submit-checkin');
+            const isWithinDistance = distanceToOffice <= maxAllowedDistanceMeters;
+            
+            if (faceVerified && isWithinDistance && !isGpsSpawningFake && currentUser) {
+                btn.disabled = false;
+                btn.className = "w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer tracking-wide";
+            } else {
+                btn.disabled = true;
+                btn.className = "w-full bg-slate-200 text-slate-400 font-bold py-4 px-6 rounded-2xl transition-all text-sm flex items-center justify-center space-x-2 opacity-60 cursor-not-allowed shadow-inner";
+            }
+        }
+
+        function submitCheckIn() {
+            if (distanceToOffice > maxAllowedDistanceMeters || (isGpsSpawningFake && isAntiCheatActive)) {
+                showModal("danger", "เกิดข้อผิดพลาด", "ระบบปฏิเสธการบันทึกเวลาเนื่องจากพิกัดไม่ผ่านการตรวจสอบความปลอดภัย");
+                return;
+            }
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('th-TH', { hour12: false });
+            
+            const newLog = {
+                id: currentUser.empId,
+                employeeName: currentUser.name,
+                timestamp: `${now.toLocaleDateString('th-TH', {day:'numeric', month:'short'})} @ ${timeStr}`,
+                distance: (distanceToOffice / 1000).toFixed(2),
+                photo: capturedImageBase64 === "DEMO_PHOTO" ? "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=80&h=80" : capturedImageBase64
+            };
+
+            let logs = JSON.parse(localStorage.getItem('nextphase_logs') || '[]');
+            logs.unshift(newLog);
+            localStorage.setItem('nextphase_logs', JSON.stringify(logs));
+
+            showModal("success", "บันทึกเข้างานสำเร็จ", `ลงเวลาเรียบร้อยเมื่อเวลา ${timeStr}`);
+            faceVerified = false;
+            checkValidationForSubmit();
+            loadLogs();
+        }
+
+        function loadLogs() {
+            const container = document.getElementById('logs-container');
+            const logs = JSON.parse(localStorage.getItem('nextphase_logs') || '[]');
+            const myLogs = currentUser ? logs.filter(log => log.id === currentUser.empId) : [];
+
+            if (myLogs.length === 0) {
+                container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs"><p>วันนี้ยังไม่มีประวัติล็อกอิน</p></div>`;
+                return;
+            }
+
+            container.innerHTML = myLogs.map(log => `
+                <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs shadow-xs">
+                    <div class="flex items-center space-x-3">
+                        <img src="${log.photo}" class="w-8 h-8 rounded-full object-cover border border-slate-200">
+                        <div>
+                            <div class="font-bold text-slate-700">${log.employeeName}</div>
+                            <div class="text-[10px] text-slate-400">${log.timestamp}</div>
+                        </div>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700">ห่าง ${log.distance} กม.</span>
+                </div>
+            `).join('');
+        }
+
+        function exportToCSV() {
+            const logs = JSON.parse(localStorage.getItem('nextphase_logs') || '[]');
+            const myLogs = currentUser ? logs.filter(log => log.id === currentUser.empId) : [];
+            if (myLogs.length === 0) return;
+
+            let csv = "data:text/csv;charset=utf-8,\uFEFFรหัสพนักงาน,ชื่อพนักงาน,เวลาล็อกอิน,ระยะห่าง(กม)\n";
+            myLogs.forEach(l => { csv += `${l.id},${l.employeeName},${l.timestamp},${l.distance}\n`; });
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csv));
+            link.setAttribute("download", `รายงานลงเวลา_NextPhase_${currentUser.empId}.csv`);
+            link.click();
+        }
+
+        function showModal(type, title, message) {
+            const modal = document.getElementById('custom-modal');
+            const icon = document.getElementById('modal-icon-container');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+
+            if (type === "success") icon.className = "w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-emerald-50 text-emerald-600 text-xl", icon.innerHTML='<i class="fa-solid fa-check"></i>';
+            else if (type === "warning") icon.className = "w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-amber-50 text-amber-600 text-xl", icon.innerHTML='<i class="fa-solid fa-exclamation"></i>';
+            else icon.className = "w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-rose-50 text-rose-600 text-xl", icon.innerHTML='<i class="fa-solid fa-shield-halved"></i>';
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() { document.getElementById('custom-modal').classList.add('hidden'); }
+    </script>
+</body>
+</html>
